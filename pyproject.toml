@@ -125,6 +125,7 @@ podnapisi = "subliminal.providers.podnapisi:PodnapisiProvider"
 subtis = "subliminal.providers.subtis:SubtisProvider"
 subtitulamos = "subliminal.providers.subtitulamos:SubtitulamosProvider"
 tvsubtitles = "subliminal.providers.tvsubtitles:TVsubtitlesProvider"
+wizdom = "subliminal.providers.wizdom:WizdomProvider"
 
 [project.entry-points."subliminal.refiners"]
 hash = "subliminal.refiners.hash:refine"

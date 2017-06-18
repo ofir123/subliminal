@@ -168,6 +168,7 @@ provider_manager = RegistrableExtensionManager(
         'subtis = subliminal.providers.subtis:SubtisProvider',
         'subtitulamos = subliminal.providers.subtitulamos:SubtitulamosProvider',
         'tvsubtitles = subliminal.providers.tvsubtitles:TVsubtitlesProvider',
+        'wizdom = subliminal.providers.wizdom:WizdomProvider',
     ],
     on_load_failure_callback=parse_extension_error,
 )
