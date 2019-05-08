@@ -9,9 +9,9 @@ def test_registrable_extension_manager_all_extensions():
         'de7cidda = subliminal.providers.addic7ed:Addic7edProvider'
     ])
     extensions = sorted(e.name for e in manager)
-    assert len(extensions) == 10
+    assert len(extensions) == 11
     assert extensions == ['addic7ed', 'argenteam', 'cinemast', 'de7cidda', 'legendastv', 'opensubtitles', 'podnapisi',
-                          'shooter', 'thesubdb', 'tvsubtitles']
+                          'shooter', 'thesubdb', 'tvsubtitles', 'wizdom']
 
 
 def test_registrable_extension_manager_internal_extension():
@@ -21,10 +21,11 @@ def test_registrable_extension_manager_internal_extension():
         'opensubtitles = subliminal.providers.opensubtitles:OpenSubtitlesProvider',
         'podnapisi = subliminal.providers.podnapisi:PodnapisiProvider',
         'thesubdb = subliminal.providers.thesubdb:TheSubDBProvider',
-        'tvsubtitles = subliminal.providers.tvsubtitles:TVsubtitlesProvider'
+        'tvsubtitles = subliminal.providers.tvsubtitles:TVsubtitlesProvider',
+        'wizdom = subliminal.providers.wizdom:WizdomProvider'
     ])
-    assert len(list(manager)) == 6
-    assert len(manager.internal_extensions) == 6
+    assert len(list(manager)) == 7
+    assert len(manager.internal_extensions) == 7
 
 
 def test_registrable_extension_manager_register():
@@ -42,13 +43,14 @@ def test_registrable_extension_manager_unregister():
     manager = RegistrableExtensionManager('subliminal.test_providers', [
         'cinemast = subliminal.providers.cinemast:CinemastProvider',
         'thesubdb = subliminal.providers.thesubdb:TheSubDBProvider',
-        'tvsubtitles = subliminal.providers.tvsubtitles:TVsubtitlesProvider'
+        'tvsubtitles = subliminal.providers.tvsubtitles:TVsubtitlesProvider',
+        'wizdom = subliminal.providers.wizdom:WizdomProvider'
     ])
-    assert len(list(manager)) == 3
+    assert len(list(manager)) == 4
     manager.register('de7cidda = subliminal.providers.addic7ed:Addic7edProvider')
     manager.unregister('de7cidda = subliminal.providers.addic7ed:Addic7edProvider')
-    assert len(list(manager)) == 3
-    assert set(manager.names()) == {'cinemast', 'thesubdb', 'tvsubtitles'}
+    assert len(list(manager)) == 4
+    assert set(manager.names()) == {'cinemast', 'thesubdb', 'tvsubtitles', 'wizdom'}
 
 
 def test_provider_manager():
