@@ -104,7 +104,7 @@ class WizdomProvider(Provider):
         category = 'movie' if is_movie else 'tv'
         title = title.replace('\'', '')
         # get TMDB ID first
-        r = self.session.get('http://api.tmdb.org/3/search/{}?api_key={}&query={}{}&language=en'.format(
+        r = self.session.get('https://api.tmdb.org/3/search/{}?api_key={}&query={}{}&language=en'.format(
             category, self._tmdb_api_key, title, '' if not year else '&year={}'.format(year)))
         r.raise_for_status()
         tmdb_results = r.json().get('results')
@@ -112,7 +112,7 @@ class WizdomProvider(Provider):
             tmdb_id = tmdb_results[0].get('id')
             if tmdb_id:
                 # get actual IMDB ID from TMDB
-                r = self.session.get('http://api.tmdb.org/3/{}/{}{}?api_key={}&language=en'.format(
+                r = self.session.get('https://api.tmdb.org/3/{}/{}{}?api_key={}&language=en'.format(
                     category, tmdb_id, '' if is_movie else '/external_ids', self._tmdb_api_key))
                 r.raise_for_status()
                 return str(r.json().get('imdb_id', '')) or None
@@ -127,8 +127,8 @@ class WizdomProvider(Provider):
 
         # search
         logger.debug('Using IMDB ID %r', imdb_id)
-        url = 'http://json.{}/{}.json'.format(self.server_url, imdb_id)
-        page_link = 'http://{}/#/{}/{}'.format(self.server_url, 'movies' if is_movie else 'series', imdb_id)
+        url = 'https://{}/api/releases/{}'.format(self.server_url, imdb_id)
+        page_link = 'https://{}/#/{}/{}'.format(self.server_url, 'movies' if is_movie else 'series', imdb_id)
 
         # get the list of subtitles
         logger.debug('Getting the list of subtitles')
@@ -191,7 +191,7 @@ class WizdomProvider(Provider):
 
     def download_subtitle(self, subtitle):
         # download
-        url = 'http://zip.{}/{}.zip'.format(self.server_url, subtitle.subtitle_id)
+        url = 'https://{}/api/files/sub/{}'.format(self.server_url, subtitle.subtitle_id)
         r = self.session.get(url, headers={'Referer': subtitle.page_link}, timeout=10)
         r.raise_for_status()
 
