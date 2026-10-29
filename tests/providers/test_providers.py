@@ -66,7 +66,7 @@ def test_list_subtitles_movie(movies: dict[str, Movie]) -> None:
     subtitles = list_subtitles({video}, languages)
 
     # test providers
-    for name in ('addic7ed', 'napiprojekt', 'opensubtitlesvip', 'tvsubtitles'):
+    for name in ('addic7ed', 'napiprojekt', 'opensubtitlesvip', 'tvsubtitles', 'wizdom'):
         assert not provider_manager[name].plugin.list_subtitles.called  # type: ignore[attr-defined]
 
     for name in ('opensubtitles', 'opensubtitlescom', 'podnapisi'):
@@ -96,6 +96,7 @@ def test_list_subtitles_episode(episodes: dict[str, Episode]) -> None:
         'podnapisi',
         'subtitulamos',
         'tvsubtitles',
+        'wizdom',
     ):
         assert provider_manager[name].plugin.list_subtitles.called  # type: ignore[attr-defined]
 
@@ -109,6 +110,7 @@ def test_list_subtitles_episode(episodes: dict[str, Episode]) -> None:
         'podnapisi',
         'subtitulamos',
         'tvsubtitles',
+        'wizdom',
     ]
 
 
@@ -120,7 +122,7 @@ def test_list_subtitles_providers(episodes: dict[str, Episode]) -> None:
     subtitles = list_subtitles({video}, languages, providers=['opensubtitles'])
 
     # test providers
-    for name in ('addic7ed', 'napiprojekt', 'opensubtitlesvip', 'podnapisi', 'tvsubtitles'):
+    for name in ('addic7ed', 'napiprojekt', 'opensubtitlesvip', 'podnapisi', 'tvsubtitles', 'wizdom'):
         assert not provider_manager[name].plugin.list_subtitles.called  # type: ignore[attr-defined]
 
     for name in ('opensubtitles',):
@@ -142,7 +144,7 @@ def test_list_subtitles_episode_no_hash(episodes: dict[str, Episode]) -> None:
     for name in ('napiprojekt', 'opensubtitlesvip', 'opensubtitlescomvip'):
         assert not provider_manager[name].plugin.list_subtitles.called  # type: ignore[attr-defined]
 
-    for name in ('addic7ed', 'gestdown', 'opensubtitles', 'podnapisi', 'subtitulamos', 'tvsubtitles'):
+    for name in ('addic7ed', 'gestdown', 'opensubtitles', 'podnapisi', 'subtitulamos', 'tvsubtitles', 'wizdom'):
         assert provider_manager[name].plugin.list_subtitles.called  # type: ignore[attr-defined]
 
     # test result
@@ -155,6 +157,7 @@ def test_list_subtitles_episode_no_hash(episodes: dict[str, Episode]) -> None:
         'podnapisi',
         'subtitulamos',
         'tvsubtitles',
+        'wizdom',
     ]
 
 
@@ -174,6 +177,7 @@ def test_list_subtitles_no_language(episodes: dict[str, Episode]) -> None:
         'opensubtitlesvip',
         'podnapisi',
         'tvsubtitles',
+        'wizdom',
     ):
         assert not provider_manager[name].plugin.list_subtitles.called  # type: ignore[attr-defined]
 
@@ -200,7 +204,7 @@ def test_download_subtitles() -> None:
     download_subtitles(subtitles)
 
     # test providers
-    for name in ('addic7ed', 'napiprojekt', 'opensubtitles', 'opensubtitlesvip', 'podnapisi'):
+    for name in ('addic7ed', 'napiprojekt', 'opensubtitles', 'opensubtitlesvip', 'podnapisi', 'wizdom'):
         assert not provider_manager[name].plugin.download_subtitle.called  # type: ignore[attr-defined]
 
     for name in ('tvsubtitles',):

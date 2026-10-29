@@ -1,205 +1,230 @@
-# -*- coding: utf-8 -*-
+"""Hebrew subtitles from Wizdom."""
+
+from __future__ import annotations
+
 import io
 import logging
 import os
-import zipfile
+from typing import TYPE_CHECKING, Any, ClassVar
+from zipfile import ZipFile
 
-from babelfish import Language
-from guessit import guessit
+from babelfish import Language  # type: ignore[import-untyped]
 from requests import Session
 
+from subliminal.cache import SHOW_EXPIRATION_TIME, region
+from subliminal.exceptions import NotInitializedProviderError, ProviderError
+from subliminal.matches import guess_matches
+from subliminal.subtitle import Subtitle
+from subliminal.utils import safely_guessit, sanitize
+from subliminal.video import Episode, Movie
+
 from . import Provider
-from .. import __short_version__
-from ..cache import SHOW_EXPIRATION_TIME, region
-from ..exceptions import ProviderError
-from ..subtitle import Subtitle, fix_line_ending, guess_matches
-from ..utils import sanitize
-from ..video import Episode, Movie
+
+if TYPE_CHECKING:
+    from collections.abc import Set
+
+    from subliminal.video import Video
 
 logger = logging.getLogger(__name__)
 
 
 class WizdomSubtitle(Subtitle):
-    """Wizdom Subtitle."""
-    provider_name = 'wizdom'
+    """Wizdom subtitle and release information."""
 
-    def __init__(self, language, hearing_impaired, page_link, series, season, episode, title, imdb_id, subtitle_id,
-                 release):
-        super(WizdomSubtitle, self).__init__(language, hearing_impaired, page_link)
+    provider_name: ClassVar[str] = 'wizdom'
+
+    def __init__(
+        self,
+        language: Language,
+        subtitle_id: str,
+        *,
+        hearing_impaired: bool = False,
+        page_link: str | None = None,
+        series: str | None = None,
+        season: int | None = None,
+        episode: int | None = None,
+        title: str | None = None,
+        imdb_id: str | None = None,
+        release: str = '',
+    ) -> None:
+        super().__init__(language, str(subtitle_id), hearing_impaired=hearing_impaired, page_link=page_link)
         self.series = series
         self.season = season
         self.episode = episode
         self.title = title
         self.imdb_id = imdb_id
-        self.subtitle_id = subtitle_id
         self.release = release
 
     @property
-    def id(self):
-        return str(self.subtitle_id)
+    def info(self) -> str:
+        """Information about the subtitle."""
+        return self.release or self.id
 
-    def get_matches(self, video):
-        matches = set()
-
-        # episode
+    def get_matches(self, video: Video) -> set[str]:
+        """Get the matches against the video."""
+        matches: set[str] = set()
         if isinstance(video, Episode):
-            # series
-            if video.series and (sanitize(self.title) in (
-                    sanitize(name) for name in [video.series] + video.alternative_series)):
+            if sanitize(self.series or self.title) in {sanitize(n) for n in [video.series, *video.alternative_series]}:
                 matches.add('series')
-            # season
-            if video.season and self.season == video.season:
+            if self.season == video.season:
                 matches.add('season')
-            # episode
-            if video.episode and self.episode == video.episode:
+            if video.episodes == [self.episode]:
                 matches.add('episode')
-            # imdb_id
-            if video.series_imdb_id and self.imdb_id == video.series_imdb_id:
+            if self.imdb_id and self.imdb_id == video.external_ids.get('series_imdb_id'):
                 matches.add('series_imdb_id')
-            # guess
-            matches |= guess_matches(video, guessit(self.release, {'type': 'episode'}), partial=True)
-        # movie
+            matches |= guess_matches(video, safely_guessit(self.release, {'type': 'episode'}), partial=True)
         elif isinstance(video, Movie):
-            # guess
-            matches |= guess_matches(video, guessit(self.release, {'type': 'movie'}), partial=True)
-
-            # title
-            if video.title and (sanitize(self.title) in (
-                    sanitize(name) for name in [video.title] + video.alternative_titles)):
+            matches |= guess_matches(video, safely_guessit(self.release, {'type': 'movie'}), partial=True)
+            if sanitize(self.title) in {sanitize(n) for n in [video.title, *video.alternative_titles]}:
                 matches.add('title')
-
         return matches
 
 
-class WizdomProvider(Provider):
+class WizdomProvider(Provider[WizdomSubtitle]):
     """Wizdom Provider."""
-    languages = {Language.fromalpha2(l) for l in ['he']}
-    server_url = 'wizdom.xyz'
 
-    _tmdb_api_key = 'a51ee051bcd762543373903de296e0a3'
+    languages: ClassVar[Set[Language]] = {Language('heb')}
+    subtitle_class: ClassVar = WizdomSubtitle
+    server_url: ClassVar[str] = 'https://wizdom.xyz'
+    _tmdb_api_key: ClassVar[str] = 'a51ee051bcd762543373903de296e0a3'
 
-    def __init__(self):
+    def __init__(self, *, timeout: int = 10) -> None:
+        self.timeout = timeout
+        self.session: Session | None = None
+
+    def initialize(self) -> None:
+        """Initialize the provider."""
+        self.session = Session()
+        self.session.headers['User-Agent'] = self.user_agent
+
+    def terminate(self) -> None:
+        """Terminate the provider."""
+        if self.session is None:
+            raise NotInitializedProviderError
+        self.session.close()
         self.session = None
 
-    def initialize(self):
-        self.session = Session()
-        self.session.headers['User-Agent'] = 'Subliminal/{}'.format(__short_version__)
-
-    def terminate(self):
-        self.session.close()
-
     @region.cache_on_arguments(expiration_time=SHOW_EXPIRATION_TIME)
-    def _search_imdb_id(self, title, year, is_movie):
-        """Search the IMDB ID for the given `title` and `year`.
-
-        :param str title: title to search for.
-        :param int year: year to search for (or 0 if not relevant).
-        :param bool is_movie: If True, IMDB ID will be searched for in TMDB instead of Wizdom.
-        :return: the IMDB ID for the given title and year (or None if not found).
-        :rtype: str
-
-        """
-        # make the search
-        logger.info('Searching IMDB ID for %r%r', title, '' if not year else ' ({})'.format(year))
+    def _search_imdb_id(self, title: str, year: int | None, is_movie: bool) -> str | None:  # noqa: FBT001
+        """Resolve an IMDb ID through TMDB when the video has none."""
+        if self.session is None:
+            raise NotInitializedProviderError
         category = 'movie' if is_movie else 'tv'
-        title = title.replace('\'', '')
-        # get TMDB ID first
-        r = self.session.get('https://api.tmdb.org/3/search/{}?api_key={}&query={}{}&language=en'.format(
-            category, self._tmdb_api_key, title, '' if not year else '&year={}'.format(year)))
+        params: dict[str, Any] = {'api_key': self._tmdb_api_key, 'query': title, 'language': 'en'}
+        if year:
+            params['year' if is_movie else 'first_air_date_year'] = year
+        r = self.session.get(f'https://api.tmdb.org/3/search/{category}', params=params, timeout=self.timeout)
         r.raise_for_status()
-        tmdb_results = r.json().get('results')
-        if tmdb_results:
-            tmdb_id = tmdb_results[0].get('id')
-            if tmdb_id:
-                # get actual IMDB ID from TMDB
-                r = self.session.get('https://api.tmdb.org/3/{}/{}{}?api_key={}&language=en'.format(
-                    category, tmdb_id, '' if is_movie else '/external_ids', self._tmdb_api_key))
-                r.raise_for_status()
-                return str(r.json().get('imdb_id', '')) or None
-        return None
+        results = r.json().get('results', [])
+        if not results or not results[0].get('id'):
+            return None
+        tmdb_id = results[0]['id']
+        suffix = '' if is_movie else '/external_ids'
+        r = self.session.get(
+            f'https://api.tmdb.org/3/{category}/{tmdb_id}{suffix}',
+            params={'api_key': self._tmdb_api_key, 'language': 'en'},
+            timeout=self.timeout,
+        )
+        r.raise_for_status()
+        imdb_id = r.json().get('imdb_id')
+        return str(imdb_id) if imdb_id else None
 
-    def query(self, title, season=None, episode=None, year=None, filename=None, imdb_id=None):
-        # search for the IMDB ID if needed.
-        is_movie = not (season and episode)
+    def query(
+        self,
+        title: str,
+        *,
+        season: int | None = None,
+        episode: int | None = None,
+        year: int | None = None,
+        imdb_id: str | None = None,
+    ) -> list[WizdomSubtitle]:
+        """Query subtitles by title or IMDb ID.
+
+        :param str title: movie or series title.
+        :param (int | None) season: season number, including season zero.
+        :param (int | None) episode: episode number.
+        :param (int | None) year: movie or series year.
+        :param (str | None) imdb_id: known movie or series IMDb ID.
+        :return: matching Hebrew subtitles.
+        :rtype: list[WizdomSubtitle]
+        """
+        if self.session is None:
+            raise NotInitializedProviderError
+        is_movie = season is None or episode is None
         imdb_id = imdb_id or self._search_imdb_id(title, year, is_movie)
         if not imdb_id:
-            return {}
-
-        # search
-        logger.debug('Using IMDB ID %r', imdb_id)
-        url = 'https://{}/api/releases/{}'.format(self.server_url, imdb_id)
-        page_link = 'https://{}/#/{}/{}'.format(self.server_url, 'movies' if is_movie else 'series', imdb_id)
-
-        # get the list of subtitles
-        logger.debug('Getting the list of subtitles')
-        r = self.session.get(url)
+            return []
+        r = self.session.get(f'{self.server_url}/api/releases/{imdb_id}', timeout=self.timeout)
         r.raise_for_status()
         try:
-            results = r.json()
+            data = r.json()
         except ValueError:
-            return {}
-
-        # filter irrelevant results
+            return []
+        if not isinstance(data, dict):
+            return []
+        results = data.get('subs', [])
         if not is_movie:
-            results = results.get('subs', [])
-            # there are two formats of result jsons - seasons list and seasons dict
             if isinstance(results, list):
-                results = results[season] if len(results) >= season else {}
-            else:
+                results = results[season] if season is not None and 0 <= season < len(results) else {}
+            elif isinstance(results, dict):
                 results = results.get(str(season), {})
-            results = results.get(str(episode), [])
-        else:
-            results = results.get('subs', [])
+            else:
+                return []
+            results = results.get(str(episode), []) if isinstance(results, dict) else []
+        if not isinstance(results, list):
+            return []
 
-        # loop over results
-        subtitles = {}
+        category = 'movies' if is_movie else 'series'
+        page_link = f'{self.server_url}/#/{category}/{imdb_id}'
+        subtitles: dict[str, WizdomSubtitle] = {}
         for result in results:
-            language = Language.fromalpha2('he')
-            hearing_impaired = False
-            subtitle_id = result['id']
-            release = result['version']
+            subtitle_id = str(result['id'])
+            subtitles[subtitle_id] = self.subtitle_class(
+                Language('heb'),
+                subtitle_id,
+                page_link=page_link,
+                series=None if is_movie else title,
+                season=season,
+                episode=episode,
+                title=title,
+                imdb_id=imdb_id,
+                release=result['version'],
+            )
+        return list(subtitles.values())
 
-            # otherwise create it
-            subtitle = WizdomSubtitle(language, hearing_impaired, page_link, title, season, episode, title, imdb_id,
-                                      subtitle_id, release)
-            logger.debug('Found subtitle %r', subtitle)
-            subtitles[subtitle_id] = subtitle
-
-        return subtitles.values()
-
-    def list_subtitles(self, video, languages):
+    def list_subtitles(self, video: Video, languages: Set[Language]) -> list[WizdomSubtitle]:
+        """List all the subtitles for the video."""
+        if not self.check_languages(languages):
+            return []
         season = episode = None
-        year = video.year
-        filename = video.name
-        imdb_id = video.imdb_id
-
         if isinstance(video, Episode):
-            titles = [video.series] + video.alternative_series
-            season = video.season
-            episode = video.episode
-            imdb_id = video.series_imdb_id
+            titles = [video.series, *video.alternative_series]
+            season, episode = video.season, video.episode
+            imdb_id = video.external_ids.get('series_imdb_id')
+        elif isinstance(video, Movie):
+            titles = [video.title, *video.alternative_titles]
+            imdb_id = video.external_ids.get('imdb_id')
         else:
-            titles = [video.title] + video.alternative_titles
-
+            return []
         for title in titles:
-            subtitles = [s for s in
-                         self.query(title, season, episode, year, filename, imdb_id) if s.language in languages]
+            subtitles = self.query(title, season=season, episode=episode, year=video.year, imdb_id=imdb_id)
             if subtitles:
                 return subtitles
-
         return []
 
-    def download_subtitle(self, subtitle):
-        # download
-        url = 'https://{}/api/files/sub/{}'.format(self.server_url, subtitle.subtitle_id)
-        r = self.session.get(url, headers={'Referer': subtitle.page_link}, timeout=10)
+    def download_subtitle(self, subtitle: WizdomSubtitle) -> None:
+        """Download the content of the subtitle."""
+        if self.session is None:
+            raise NotInitializedProviderError
+        r = self.session.get(
+            f'{self.server_url}/api/files/sub/{subtitle.subtitle_id}',
+            headers={'Referer': subtitle.page_link},
+            timeout=self.timeout,
+        )
         r.raise_for_status()
-
-        # open the zip
-        with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
-            # remove some filenames from the namelist
-            namelist = [n for n in zf.namelist() if os.path.splitext(n)[1] in ['.srt', '.sub']]
-            if len(namelist) > 1:
-                raise ProviderError('More than one file to unzip')
-
-            subtitle.content = fix_line_ending(zf.read(namelist[0]))
+        with ZipFile(io.BytesIO(r.content)) as zf:
+            names = [n for n in zf.namelist() if os.path.splitext(n)[1].lower() in {'.srt', '.sub'}]
+            if len(names) != 1:
+                msg = 'Expected exactly one subtitle file in the archive'
+                raise ProviderError(msg)
+            subtitle.set_content(zf.read(names[0]))
