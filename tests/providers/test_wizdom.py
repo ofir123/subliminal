@@ -266,10 +266,18 @@ def test_download_subtitle(provider: WizdomProvider) -> None:
 
 def test_lifecycle(provider: WizdomProvider) -> None:
     session = mock_session(provider)
-    assert session.headers['User-Agent'] == provider.user_agent
+    assert 'User-Agent' not in session.headers
     provider.terminate()
     session.close.assert_called_once()
     assert provider.session is None
+
+
+def test_user_agent_avoids_rejected_name() -> None:
+    provider = WizdomProvider()
+    provider.initialize()
+    assert provider.session is not None
+    assert 'subliminal' not in str(provider.session.headers['User-Agent']).lower()
+    provider.terminate()
 
 
 def test_uninitialized() -> None:
