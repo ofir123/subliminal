@@ -94,8 +94,8 @@ class WizdomProvider(Provider[WizdomSubtitle]):
 
     def initialize(self) -> None:
         """Initialize the provider."""
+        # Wizdom answers HTTP 520 to any User-Agent naming Subliminal, so keep the requests default.
         self.session = Session()
-        self.session.headers['User-Agent'] = self.user_agent
 
     def terminate(self) -> None:
         """Terminate the provider."""
