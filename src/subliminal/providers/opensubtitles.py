@@ -220,7 +220,7 @@ class OpenSubtitlesProvider(Provider):
         """Terminate the provider."""
         logger.info('Logging out')
         checked(self.server.LogOut(self.token))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        self.server.close()
+        self.server('close')()  # closes the connection; self.server.close() would be a remote call named close
         self.token = None
         logger.debug('Logged out')
 

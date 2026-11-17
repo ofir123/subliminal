@@ -1,4 +1,5 @@
 import os
+from xmlrpc.client import ServerProxy, loads
 
 import pytest
 from babelfish import Language, language_converters  # type: ignore[import-untyped]
@@ -250,6 +251,32 @@ def test_logout() -> None:
     provider = OpenSubtitlesProvider(USERNAME, PASSWORD)
     provider.initialize()
     provider.terminate()
+    assert provider.token is None
+
+
+class _RecordingTransport:
+    """Stands in for the XML-RPC transport: records each remote call and whether it was closed."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.closed = False
+
+    def request(self, host: str, handler: str, request_body: bytes, *, verbose: bool = False) -> tuple:
+        self.calls.append(loads(request_body)[1])
+        return ({'status': '200 OK'},)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_terminate_closes_the_connection_without_a_remote_close_call() -> None:
+    provider = OpenSubtitlesProvider()
+    transport = _RecordingTransport()
+    provider.server = ServerProxy(provider.server_url, transport)  # type: ignore[arg-type]
+    provider.token = 'token'
+    provider.terminate()
+    assert transport.calls == ['LogOut']  # no remote "close" call, which the server rejects
+    assert transport.closed
     assert provider.token is None
 
 
